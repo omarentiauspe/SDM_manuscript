@@ -194,3 +194,31 @@ map(
   add = T
 )
 points(capg$lon, capg$lat, pch = "+")
+
+
+####
+
+# Load required libraries
+library(raster)
+library(maps)
+library(mapdata)
+
+# Load your raster
+capout <- raster("Apostolepis_dimidiata.asc")
+plot(capout)
+points(capg$lon, capg$lat, pch="+")
+
+# Reclassification matrix
+n <- c(0, 0.262, 0, 0.262, 1, 1)
+rclmat2 <- matrix(n, ncol = 3, byrow = TRUE)
+
+# Reclassify the raster
+rc2 <- reclassify(capout, rclmat2)
+plot(rc2)
+
+# Map plotting
+map('worldHires', xlim = c(extent(capout)[1], extent(capout)[2]), ylim = c(extent(capout)[3], extent(capout)[4]), fill = FALSE, add = TRUE)
+points(capg$lon, capg$lat, pch = "+")
+
+# Export the presence layer as an .asc file
+writeRaster(rc2, "presence_layer.asc", format = "ascii", overwrite = TRUE
