@@ -203,7 +203,7 @@ library(raster)
 library(maps)
 library(mapdata)
 
-# Load your raster
+# Load raster
 capout <- raster("Apostolepis_dimidiata.asc")
 plot(capout)
 points(capg$lon, capg$lat, pch="+")
