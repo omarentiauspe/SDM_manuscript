@@ -291,5 +291,65 @@ map('worldHires', xlim = c(extent(snkout)[1], extent(snkout)[2]), ylim = c(exten
 points(sapg$lon, sapg$lat, pch = "+")
 
 # Export the presence layer as an .asc file
-writeRaster(rc2, "presence_layer.asc", format = "ascii", overwrite = TRUE
+writeRaster(rc2, "presence_layer.asc", format = "ascii", overwrite = TRUE)
+
+
+####
+# Alternative presence-absence raster option, with the 
+# "Maximum training sensitivity plus specificity" threshold
+####
+# Load required libraries
+library(raster)
+library(maps)
+library(mapdata)
+library(sp)  # for spatial objects
+
+# Load raster
+snkout <- raster("Apostolepis_dimidiata.asc")
+plot(snkout)
+points(sapg$lon, sapg$lat, pch="+")
+
+# Reclassification matrix
+n <- c(0, 0.262, 0, 0.262, 1, 1)
+rclmat2 <- matrix(n, ncol = 3, byrow = TRUE)
+
+# Reclassify the raster
+rc2 <- reclassify(snkout, rclmat2)
+plot(rc2)
+
+# Map plotting
+map('worldHires', xlim = c(extent(snkout)[1], extent(snkout)[2]), ylim = c(extent(snkout)[3], extent(snkout)[4]), fill = FALSE, add = TRUE)
+points(sapg$lon, sapg$lat, pch = "+")
+
+# Convert presence points to spatial object
+coordinates <- SpatialPoints(cbind(sapg$lon, sapg$lat), proj4string = crs(snkout))
+
+# Step 1: Extract presence values
+presence_values <- extract(snkout, coordinates)
+
+# Step 2: Calculate maximum training sensitivity plus specificity threshold manually
+threshold <- min(presence_values, na.rm = TRUE)
+
+# Step 3: Reclassify raster using the threshold
+binary_raster <- calc(snkout, fun = function(x) ifelse(x >= threshold, 1, 0))
+plot(binary_raster)
+
+# Step 4: Create observed and predicted classifications
+# Extract binary values at presence points for comparison
+observed <- ifelse(!is.na(presence_values), 1, 0)  # Assuming all presence points are observed presences
+predicted <- ifelse(presence_values >= threshold, 1, 0)
+
+# Step 5: Generate the confusion matrix
+conf_matrix <- table(observed, predicted)
+
+# Step 6: Calculate the Kappa statistic manually
+# Kappa calculation based on confusion matrix
+n <- sum(conf_matrix)  # total samples
+p_o <- sum(diag(conf_matrix)) / n  # observed agreement
+p_e <- sum(rowSums(conf_matrix) * colSums(conf_matrix)) / (n * n)  # expected agreement
+kappa <- (p_o - p_e) / (1 - p_e)
+print(kappa)
+
+# Export the binary presence-absence layer as an .asc file
+writeRaster(binary_raster, "binary_presence_layer.asc", format = "ascii", overwrite = TRUE)
 
