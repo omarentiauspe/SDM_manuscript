@@ -33,35 +33,35 @@ geospecies$lat <- geospecies$lat
 
 # Clean coordinates for duplicates # 
 
-capgeo <- geospecies %>%
+snakgeo <- geospecies %>%
   select(Species, lat, lon) %>% 
   filter(complete.cases(.)) %>%  
   distinct() 
 
-str(capgeo)
+str(snakgeo)
 
 # Plot a geographic distribution map # 
 
 map(
   'worldHires',
-  xlim = c(min(capgeo$lon) - 5.0, max(capgeo$lon) + 5.0),
-  ylim = c(min(capgeo$lat) - 5.0, max(capgeo$lat) + 5.0),
+  xlim = c(min(snakgeo$lon) - 5.0, max(snakgeo$lon) + 5.0),
+  ylim = c(min(snakgeo$lat) - 5.0, max(snakgeo$lat) + 5.0),
   fill = T,
   col = "light grey"
 )
 
 box()
 
-points(capgeo$lon,
-       capgeo$lat,
+points(snakgeo$lon,
+       snakgeo$lat,
        col = "orange",
        pch = 20,
        cex = 0.7)
 
-capc <- capgeo %>% 
+sapc <- snakgeo %>% 
   dplyr::select(Species, lat, lon)
 
-write.csv(capc, "snake_locs.csv", row.names = FALSE)
+write.csv(sapc, "snake_locs.csv", row.names = FALSE)
 
 # Extract bioclimatic variables # 
 
@@ -113,14 +113,14 @@ plot(env)
 # Cropping raster files to extent of distribution #
 
 
-capg <- read.csv("snake_locs.csv")
+sapg <- read.csv("snake_locs.csv")
 
 buff <- 3   
 
-xmin <- min(capg$lon) - 5.0
-xmax <- max(capg$lon) + 5.0
-ymin <- min(capg$lat) - 5.0
-ymax <- max(capg$lat) + 5.0 
+xmin <- min(sapg$lon) - 5.0
+xmax <- max(sapg$lon) + 5.0
+ymin <- min(sapg$lat) - 5.0
+ymax <- max(sapg$lat) + 5.0 
 
 e <- extent(xmin, xmax, ymin, ymax)
 
@@ -135,7 +135,7 @@ map(
   add = T
 )
 
-points(capg$lon, capg$lat, pch = "+")
+points(sapg$lon, sapg$lat, pch = "+")
 
 
 ten_div <-
@@ -169,14 +169,14 @@ library(ggplot2)
 library(scales)
 library(rgdal)
 
-capout <- raster("Apostolepis_dimidiata.asc")
-plot(capout)
-points(capg$lon, capg$lat, pch="+")
+snkout <- raster("Apostolepis_dimidiata.asc")
+plot(snkout)
+points(sapg$lon, sapg$lat, pch="+")
 
-xmin <- extent(capout)[1]
-xmax <- extent(capout)[2]
-ymin <- extent(capout)[3]
-ymax <- extent(capout)[4]
+xmin <- extent(snkout)[1]
+xmax <- extent(snkout)[2]
+ymin <- extent(snkout)[3]
+ymax <- extent(snkout)[4]
 
 
 n <- c(0, 0.262, 0, 0.262, 1, 1)
@@ -184,7 +184,7 @@ rclmat2 <- matrix(n, ncol = 3, byrow = TRUE)
 
 rclmat2
 
-rc2 <- reclassify(capout, rclmat2)
+rc2 <- reclassify(snkout, rclmat2)
 plot(rc2)
 map(
   'worldHires',
@@ -193,10 +193,80 @@ map(
   fill = F,
   add = T
 )
-points(capg$lon, capg$lat, pch = "+")
+points(sapg$lon, sapg$lat, pch = "+")
 
 
 ####
+# Exploratory analyses with removing highly correlated variables
+####
+# This is optional and was NOT used in final analyses; comment these lines
+# if you are not using this 
+# Step 1: List and load ASC files
+
+setwd("~/SDM_TEST/Species_Loc")
+
+file_list <- list.files("~/SDM_TEST/Species_Loc",
+                    	pattern = ".asc", full.names = TRUE)
+
+# Stack ASC files into a raster stack and convert to data frame
+bioFinal <- stack(file_list)
+bioFinal <- as.data.frame(bioFinal)
+
+# Step 2: Calculate VIF and identify highly correlated variables
+vif.cor <- vifcor(bioFinal, th = 0.7)
+variables_to_remove <- vif.cor@excluded  # Variables to exclude due to high correlation
+
+# Step 3: Create a curated data frame excluding highly correlated variables
+bioFinal_curated <- bioFinal[, !names(bioFinal) %in% variables_to_remove]
+
+# Step 4: Save each curated variable as a GeoTIFF file
+output_folder <- "~/SDM_TEST/Species_Loc"
+if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
+
+# Define a template raster for extent and resolution (optional)
+template_raster <- raster(file_list[1])  # Using the first file as a template
+
+# Loop through each curated variable
+for (var in colnames(bioFinal_curated)) {
+  # Create a raster layer with the same extent and resolution as the template
+  layer <- raster(template_raster)
+  values(layer) <- as.numeric(bioFinal_curated[[var]])
+ 
+  # Define file path and save as GeoTIFF
+  tiff_file <- paste0(output_folder, "/", var, ".tif")
+  writeRaster(layer, filename = tiff_file, format = "GTiff", overwrite = TRUE)
+}
+
+# Step 5: Generate a detailed report of excluded variables and correlations
+# Retrieve the correlation matrix and identify variable pairs with correlation > 0.7
+cor_matrix <- vif.cor@corMatrix
+correlated_pairs <- data.frame(Variable1 = character(), Variable2 = character(), Correlation = numeric())
+
+for (i in seq_len(nrow(cor_matrix))) {
+  for (j in seq(i + 1, ncol(cor_matrix))) {
+	if (abs(cor_matrix[i, j]) > 0.7) {  # Use threshold as per vifcor settings
+  	correlated_pairs <- rbind(correlated_pairs,
+                            	data.frame(Variable1 = rownames(cor_matrix)[i],
+                                       	Variable2 = colnames(cor_matrix)[j],
+                                       	Correlation = cor_matrix[i, j]))
+	}
+  }
+}
+
+# Step 6: Write the report to a text file
+report_file <- paste0(output_folder, "/correlation_report.txt")
+writeLines("Highly Correlated Variable Pairs Removed:\n", con = report_file)
+write.table(correlated_pairs, file = report_file, append = TRUE, row.names = FALSE, col.names = TRUE)
+
+cat("Curated GeoTIFF variables and detailed correlation report saved successfully!")
+
+# Export the correlation matrix as a CSV file
+write.csv(cor_matrix, file = "~/SDM_TEST/Species_Loc/correlation_curated_matrix.csv", row.names = TRUE)
+write.csv(variables_to_remove, file = "~/SDM_TEST/Species_Loc/correlation_raw_matrix.csv", row.names = TRUE)
+
+###
+# End of exploratory analyses
+###
 
 # Load required libraries
 library(raster)
@@ -204,21 +274,22 @@ library(maps)
 library(mapdata)
 
 # Load raster
-capout <- raster("Apostolepis_dimidiata.asc")
-plot(capout)
-points(capg$lon, capg$lat, pch="+")
+snkout <- raster("Apostolepis_dimidiata.asc")
+plot(snkout)
+points(sapg$lon, sapg$lat, pch="+")
 
 # Reclassification matrix
 n <- c(0, 0.262, 0, 0.262, 1, 1)
 rclmat2 <- matrix(n, ncol = 3, byrow = TRUE)
 
 # Reclassify the raster
-rc2 <- reclassify(capout, rclmat2)
+rc2 <- reclassify(snkout, rclmat2)
 plot(rc2)
 
 # Map plotting
-map('worldHires', xlim = c(extent(capout)[1], extent(capout)[2]), ylim = c(extent(capout)[3], extent(capout)[4]), fill = FALSE, add = TRUE)
-points(capg$lon, capg$lat, pch = "+")
+map('worldHires', xlim = c(extent(snkout)[1], extent(snkout)[2]), ylim = c(extent(snkout)[3], extent(snkout)[4]), fill = FALSE, add = TRUE)
+points(sapg$lon, sapg$lat, pch = "+")
 
 # Export the presence layer as an .asc file
 writeRaster(rc2, "presence_layer.asc", format = "ascii", overwrite = TRUE
+
